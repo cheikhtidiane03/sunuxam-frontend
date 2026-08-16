@@ -1,0 +1,233 @@
+import { Component, OnInit, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { LucideAngularModule } from 'lucide-angular';
+import { UtilisateurService } from '../../../core/services/utilisateur.service';
+import { AuthService } from '../../../core/services/auth.service';
+import { ToastService } from '../../../core/services/toast.service';
+import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
+import { LoadingBlockComponent } from '../../../shared/components/loading-block/loading-block.component';
+import { Utilisateur, RegisterRequest } from '../../../core/models/utilisateur.model';
+
+@Component({
+  selector: 'app-utilisateurs-admin',
+  standalone: true,
+  imports: [CommonModule, FormsModule, LucideAngularModule, LoadingBlockComponent],
+  template: `
+    <div class="max-w-5xl mx-auto">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="page-title">Utilisateurs</h1>
+          <p class="page-subtitle">Comptes candidats et administrateurs.</p>
+        </div>
+        <button (click)="ouvrirCreation()" class="btn-primary">
+          <lucide-icon name="user-plus" [size]="16"></lucide-icon> Nouvel administrateur
+        </button>
+      </div>
+
+      @if (loading()) {
+        <app-loading-block></app-loading-block>
+      } @else {
+        <div class="mt-8 overflow-hidden rounded-xl ring-1 ring-slate-200 dark:ring-slate-700/60 bg-white dark:bg-slate-800">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+              <tr>
+                <th class="px-5 py-3">Nom</th>
+                <th class="px-5 py-3">Nom d'utilisateur</th>
+                <th class="px-5 py-3">Téléphone</th>
+                <th class="px-5 py-3">Rôles</th>
+                <th class="px-5 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+              @for (u of utilisateurs(); track u.id) {
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                  <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">{{ u.prenom }} {{ u.nom }}</td>
+                  <td class="px-5 py-3 text-slate-600 dark:text-slate-300">{{ u.username }}</td>
+                  <td class="px-5 py-3 text-slate-600 dark:text-slate-300">{{ u.telephone || '—' }}</td>
+                  <td class="px-5 py-3">
+                    <div class="flex gap-1.5">
+                      @for (r of u.roles; track r.id) {
+                        <span class="badge" [ngClass]="r.name === 'ROLE_ADMIN' ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400' : 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400'">
+                          <lucide-icon [name]="r.name === 'ROLE_ADMIN' ? 'shield-check' : 'circle-user-round'" [size]="12"></lucide-icon>
+                          {{ r.name === 'ROLE_ADMIN' ? 'Admin' : 'Candidat' }}
+                        </span>
+                      }
+                    </div>
+                  </td>
+                  <td class="px-5 py-3">
+                    <div class="flex justify-end gap-3">
+                      <button (click)="ouvrirEdition(u)" class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-primary-600">
+                        <lucide-icon name="pencil" [size]="13"></lucide-icon> Modifier
+                      </button>
+                      <button
+                        (click)="supprimer(u)"
+                        [disabled]="u.username === auth.currentUser()?.username"
+                        [title]="u.username === auth.currentUser()?.username ? 'Impossible de supprimer son propre compte' : ''"
+                        class="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <lucide-icon name="trash-2" [size]="13"></lucide-icon> Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="5" class="px-5 py-12 text-center text-slate-500 dark:text-slate-400">Aucun utilisateur.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+
+    <!-- Modal creation admin -->
+    @if (modalCreationOuvert()) {
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+        <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 p-6 shadow-xl">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white">Nouvel administrateur</h2>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Ce compte aura tous les droits d'administration.</p>
+
+          <div class="mt-5 space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="label-field">Prénom</label>
+                <input class="input-field" type="text" [(ngModel)]="formCreation.prenom" name="prenom" />
+              </div>
+              <div>
+                <label class="label-field">Nom</label>
+                <input class="input-field" type="text" [(ngModel)]="formCreation.nom" name="nom" />
+              </div>
+            </div>
+            <div>
+              <label class="label-field">Nom d'utilisateur</label>
+              <input class="input-field" type="text" [(ngModel)]="formCreation.username" name="username" />
+            </div>
+            <div>
+              <label class="label-field">Téléphone</label>
+              <input class="input-field" type="text" [(ngModel)]="formCreation.telephone" name="telephone" />
+            </div>
+            <div>
+              <label class="label-field">Mot de passe</label>
+              <input class="input-field" type="password" [(ngModel)]="formCreation.password" name="password" />
+            </div>
+          </div>
+
+          <div class="mt-6 flex justify-end gap-3">
+            <button (click)="modalCreationOuvert.set(false)" class="btn-secondary">Annuler</button>
+            <button (click)="creer()" class="btn-primary">Créer</button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Modal edition -->
+    @if (modalEditionOuvert()) {
+      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+        <div class="w-full max-w-md rounded-xl bg-white dark:bg-slate-800 p-6 shadow-xl">
+          <h2 class="text-base font-bold text-slate-900 dark:text-white">Modifier l'utilisateur</h2>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Le mot de passe et les rôles ne sont pas modifiables ici.</p>
+
+          <div class="mt-5 space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="label-field">Prénom</label>
+                <input class="input-field" type="text" [(ngModel)]="formEdition.prenom" name="prenomEdit" />
+              </div>
+              <div>
+                <label class="label-field">Nom</label>
+                <input class="input-field" type="text" [(ngModel)]="formEdition.nom" name="nomEdit" />
+              </div>
+            </div>
+            <div>
+              <label class="label-field">Nom d'utilisateur</label>
+              <input class="input-field" type="text" [(ngModel)]="formEdition.username" name="usernameEdit" />
+            </div>
+            <div>
+              <label class="label-field">Téléphone</label>
+              <input class="input-field" type="text" [(ngModel)]="formEdition.telephone" name="telephoneEdit" />
+            </div>
+          </div>
+
+          <div class="mt-6 flex justify-end gap-3">
+            <button (click)="modalEditionOuvert.set(false)" class="btn-secondary">Annuler</button>
+            <button (click)="enregistrerEdition()" class="btn-primary">Enregistrer</button>
+          </div>
+        </div>
+      </div>
+    }
+  `
+})
+export class UtilisateursAdminComponent implements OnInit {
+  utilisateurs = signal<Utilisateur[]>([]);
+  loading = signal(true);
+
+  modalCreationOuvert = signal(false);
+  formCreation: RegisterRequest = { nom: '', prenom: '', username: '', telephone: '', password: '' };
+
+  modalEditionOuvert = signal(false);
+  editionId: number | null = null;
+  formEdition: Partial<Utilisateur> = { nom: '', prenom: '', username: '', telephone: '' };
+
+  constructor(
+    private utilisateurService: UtilisateurService,
+    public auth: AuthService,
+    private toast: ToastService,
+    private confirmDialog: ConfirmDialogService
+  ) {}
+
+  ngOnInit() {
+    this.charger();
+  }
+
+  charger() {
+    this.utilisateurService.getAll().subscribe((data) => {
+      this.utilisateurs.set(data);
+      this.loading.set(false);
+    });
+  }
+
+  ouvrirCreation() {
+    this.formCreation = { nom: '', prenom: '', username: '', telephone: '', password: '' };
+    this.modalCreationOuvert.set(true);
+  }
+
+  creer() {
+    this.utilisateurService.creerAdmin(this.formCreation).subscribe(() => {
+      this.toast.success('Administrateur créé');
+      this.modalCreationOuvert.set(false);
+      this.charger();
+    });
+  }
+
+  ouvrirEdition(u: Utilisateur) {
+    this.editionId = u.id;
+    this.formEdition = { nom: u.nom, prenom: u.prenom, username: u.username, telephone: u.telephone };
+    this.modalEditionOuvert.set(true);
+  }
+
+  enregistrerEdition() {
+    if (this.editionId === null) return;
+    this.utilisateurService.update(this.editionId, this.formEdition).subscribe(() => {
+      this.toast.success('Utilisateur mis à jour');
+      this.modalEditionOuvert.set(false);
+      this.charger();
+    });
+  }
+
+  async supprimer(u: Utilisateur) {
+    if (u.username === this.auth.currentUser()?.username) return;
+
+    const confirmed = await this.confirmDialog.confirm({
+      title: 'Supprimer cet utilisateur ?',
+      message: `Le compte de "${u.prenom} ${u.nom}" (${u.username}) sera définitivement supprimé.`,
+      confirmLabel: 'Supprimer',
+      danger: true
+    });
+    if (!confirmed) return;
+
+    this.utilisateurService.delete(u.id).subscribe(() => {
+      this.toast.success('Utilisateur supprimé');
+      this.charger();
+    });
+  }
+}
