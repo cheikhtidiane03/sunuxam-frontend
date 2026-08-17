@@ -4,7 +4,11 @@ import { adminGuard } from './core/guards/admin.guard';
 import { candidatGuard } from './core/guards/candidat.guard';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'connexion', pathMatch: 'full' },
+  {
+    path: '',
+    pathMatch: 'full',
+    loadComponent: () => import('./features/landing/landing.component').then((m) => m.LandingComponent)
+  },
   {
     path: 'connexion',
     loadComponent: () => import('./features/auth/login/login.component').then((m) => m.LoginComponent)
